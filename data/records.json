@@ -1,0 +1,23 @@
+{
+  "records": [
+    {
+      "date": "2026-05-15",
+      "studyMinutes": 60,
+      "notes": "버블 정렬 구현 및 시각화",
+      "algorithms": [
+        {
+          "id": "bubble-sort",
+          "title": "버블 정렬",
+          "category": "sorting",
+          "tags": ["sorting", "beginner"],
+          "description": "인접한 두 원소를 비교해 정렬하는 가장 단순한 정렬 알고리즘입니다.",
+          "complexity": {
+            "time": "O(n²)",
+            "space": "O(1)"
+          },
+          "sourceFile": "AlgorithmStudy/Sorting/BubbleSort.cs"
+        }
+      ]
+    }
+  ]
+}
