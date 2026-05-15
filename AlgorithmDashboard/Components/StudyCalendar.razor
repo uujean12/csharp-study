@@ -1,0 +1,199 @@
+@rendermode InteractiveServer
+@inject StudyRecordService RecordService
+
+<div class="calendar-wrapper">
+
+    <div class="calendar-header">
+        <button @onclick="PrevYear">‹</button>
+        <h2>@(displayYear)년</h2>
+        <button @onclick="NextYear">›</button>
+    </div>
+
+    <div class="calendar-legend">
+        <span>적음</span>
+        <span class="legend-cell cell-empty"></span>
+        <span class="legend-cell cell-low"></span>
+        <span class="legend-cell cell-mid"></span>
+        <span class="legend-cell cell-high"></span>
+        <span class="legend-cell cell-max"></span>
+        <span>많음</span>
+    </div>
+
+    <div class="calendar-grid">
+        @for (int m = 1; m <= 12; m++)
+        {
+            var month = m;
+            <div class="month-block">
+                <div class="month-title">@(month)월</div>
+                <div class="day-headers">
+                    @foreach (var name in DayNames)
+                    {
+                        <div class="day-name">@name</div>
+                    }
+                </div>
+                <div class="days-grid">
+                    @foreach (var slot in GetMonthSlots(displayYear, month))
+                    {
+                        if (slot is null)
+                        {
+                            <div class="day-cell day-empty"></div>
+                        }
+                        else
+                        {
+                            var date = slot.Value;
+                            <div class="day-cell @GetCellClass(date) @(date == today ? "day-today" : "") @(date == selectedDate ? "day-selected" : "")"
+                                 @onclick="() => SelectDate(date)"
+                                 title="@GetTooltip(date)">
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+        }
+    </div>
+
+    @if (selectedDate.HasValue)
+    {
+        <div class="detail-panel">
+            <div class="detail-header">
+                <h3>@FormatDate(selectedDate.Value)</h3>
+                <button class="close-btn" @onclick="CloseDetail">×</button>
+            </div>
+
+            @if (selectedRecord is not null)
+            {
+                <div class="detail-meta">
+                    <span>⏱ @(selectedRecord.StudyMinutes)분</span>
+                    @if (!string.IsNullOrWhiteSpace(selectedRecord.Notes))
+                    {
+                        <span>📝 @selectedRecord.Notes</span>
+                    }
+                </div>
+
+                @if (selectedRecord.Algorithms.Count > 0)
+                {
+                    <div class="algorithm-list">
+                        @foreach (var algo in selectedRecord.Algorithms)
+                        {
+                            <div class="algorithm-card">
+                                <div class="algo-header">
+                                    <h4>@algo.Title</h4>
+                                    <span class="badge category-badge">@algo.Category</span>
+                                </div>
+                                <p class="algo-desc">@algo.Description</p>
+                                <div class="algo-complexity">
+                                    <span>시간 @algo.Complexity.Time</span>
+                                    <span>공간 @algo.Complexity.Space</span>
+                                </div>
+                                @if (algo.Tags.Count > 0)
+                                {
+                                    <div class="algo-tags">
+                                        @foreach (var tag in algo.Tags)
+                                        {
+                                            <span class="badge tag-badge">@tag</span>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            }
+            else
+            {
+                <p class="no-study">공부 기록이 없는 날이에요.</p>
+            }
+        </div>
+    }
+
+</div>
+
+@code {
+    private static readonly string[] DayNames = ["월", "화", "수", "목", "금", "토", "일"];
+    private static readonly string[] KorDays = ["일", "월", "화", "수", "목", "금", "토"];
+
+    private Dictionary<DateOnly, StudyRecord> recordsByDate = [];
+    private DateOnly today;
+    private int displayYear;
+    private DateOnly? selectedDate;
+    private StudyRecord? selectedRecord;
+
+    protected override async Task OnInitializedAsync()
+    {
+        today = DateOnly.FromDateTime(DateTime.Today);
+        displayYear = today.Year;
+        recordsByDate = await RecordService.GetRecordsByDateAsync();
+    }
+
+    private IEnumerable<DateOnly?> GetMonthSlots(int year, int month)
+    {
+        var firstDay = new DateOnly(year, month, 1);
+        int daysInMonth = DateTime.DaysInMonth(year, month);
+
+        // Monday-first: Mon=0 ... Sun=6
+        int startOffset = ((int)firstDay.DayOfWeek + 6) % 7;
+
+        for (int i = 0; i < startOffset; i++)
+            yield return null;
+
+        for (int d = 1; d <= daysInMonth; d++)
+            yield return new DateOnly(year, month, d);
+    }
+
+    private string GetCellClass(DateOnly date)
+    {
+        if (date > today) return "cell-future";
+
+        if (!recordsByDate.TryGetValue(date, out var record))
+            return "cell-empty";
+
+        return record.StudyMinutes switch
+        {
+            <= 0  => "cell-empty",
+            <= 30 => "cell-low",
+            <= 60 => "cell-mid",
+            <= 120 => "cell-high",
+            _     => "cell-max"
+        };
+    }
+
+    private string GetTooltip(DateOnly date)
+    {
+        if (!recordsByDate.TryGetValue(date, out var record))
+            return date.ToString("yyyy-MM-dd");
+
+        return $"{date:yyyy-MM-dd} | {record.StudyMinutes}분 | 알고리즘 {record.Algorithms.Count}개";
+    }
+
+    private string FormatDate(DateOnly date) =>
+        $"{date.Year}년 {date.Month}월 {date.Day}일 ({KorDays[(int)date.DayOfWeek]})";
+
+    private void SelectDate(DateOnly date)
+    {
+        if (selectedDate == date)
+        {
+            CloseDetail();
+            return;
+        }
+        selectedDate = date;
+        recordsByDate.TryGetValue(date, out selectedRecord);
+    }
+
+    private void CloseDetail()
+    {
+        selectedDate = null;
+        selectedRecord = null;
+    }
+
+    private void PrevYear()
+    {
+        displayYear--;
+        CloseDetail();
+    }
+
+    private void NextYear()
+    {
+        displayYear++;
+        CloseDetail();
+    }
+}
