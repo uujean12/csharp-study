@@ -1,7 +1,416 @@
 @page "/"
+@rendermode InteractiveServer
+@inject ProgressService Svc
+@inject ClaudeService Claude
 
-<PageTitle>알고리즘 공부 대시보드</PageTitle>
+<div class="page">
 
-<h1>알고리즘 공부 기록</h1>
+    <!-- ── 헤더 ────────────────────────────────────── -->
+    <header class="hdr">
+        <span class="hdr-logo">🌱 나의 C# 알고리즘 공부</span>
+        <span class="hdr-stat">완료 @(completedIds.Count) / @totalCount 개</span>
+    </header>
 
-<StudyCalendar />
+    <!-- ── 잔디 캘린더 ──────────────────────────────── -->
+    <section class="grass-section">
+        <div class="grass-inner">
+            <div class="month-row">
+                @foreach (var (label, px) in monthLabels)
+                {
+                    <span class="mlabel" style="left:@(px)px">@label</span>
+                }
+            </div>
+            <div class="grass-body">
+                <div class="day-col">
+                    <span></span><span>Mon</span><span></span>
+                    <span>Wed</span><span></span><span>Fri</span><span></span>
+                </div>
+                <div class="weeks-wrap">
+                    @foreach (var week in grassWeeks)
+                    {
+                        <div class="week-col">
+                            @foreach (var day in week)
+                            {
+                                @if (day is null)
+                                {
+                                    <div class="gcell void"></div>
+                                }
+                                else
+                                {
+                                    <div class="gcell @GrassColor(day.Value)"
+                                         title="@GrassTooltip(day.Value)"></div>
+                                }
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ── 3열 본문 ─────────────────────────────────── -->
+    <div class="cols">
+
+        <!-- 왼쪽: 커리큘럼 아코디언 -->
+        <nav class="sidebar">
+            @foreach (var (stage, si) in Curriculum.Stages.Select((s, i) => (s, i)))
+            {
+                <div class="stage">
+                    <button class="stage-btn @(openStages.Contains(si) ? "open" : "")"
+                            @onclick="() => ToggleStage(si)">
+                        <span class="arrow">@(openStages.Contains(si) ? "▾" : "▸")</span>
+                        @stage.Title
+                    </button>
+                    @if (openStages.Contains(si))
+                    {
+                        <div class="stage-items">
+                            @foreach (var algo in stage.Algorithms)
+                            {
+                                <button class="algo-btn @(selected?.Id == algo.Id ? "active" : "")"
+                                        @onclick="() => Select(algo)">
+                                    <span class="dot">@(completedIds.Contains(algo.Id) ? "✅" : "○")</span>
+                                    @algo.Title
+                                </button>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </nav>
+
+        <!-- 가운데: 학습 화면 -->
+        <section class="learn">
+            @if (selected is null)
+            {
+                <div class="empty">← 왼쪽에서 알고리즘을 선택하세요</div>
+            }
+            else
+            {
+                <div class="learn-hdr">
+                    <h2>@selected.Title</h2>
+                    @if (completedIds.Contains(selected.Id))
+                    {
+                        <span class="badge">✅ 완료</span>
+                    }
+                </div>
+
+                <!-- 개념 작성 -->
+                <div class="card">
+                    <div class="card-title">📖 개념 작성</div>
+                    <textarea class="ta ta-concept"
+                              value="@concept"
+                              @oninput="e => { concept = e.Value?.ToString() ?? string.Empty; conceptDirty = true; }"
+                              placeholder="이 알고리즘의 개념을 직접 정리해보세요...&#10;예) 동작 원리, 시간복잡도, 언제 사용하는지 등"
+                              rows="5"></textarea>
+                    <div class="row-actions">
+                        <button class="btn btn-save" @onclick="SaveConcept"
+                                disabled="@(!conceptDirty)">💾 저장</button>
+                        @if (conceptSaved) { <span class="flash">저장됨 ✓</span> }
+                    </div>
+                </div>
+
+                <!-- 코드 작성 -->
+                <div class="card">
+                    <div class="card-title">💻 C# 코드 작성</div>
+                    <textarea class="ta ta-code"
+                              value="@userCode"
+                              @oninput="e => { userCode = e.Value?.ToString() ?? string.Empty; result = null; }"
+                              placeholder="여기에 C# 코드를 작성하세요..."
+                              rows="13"
+                              spellcheck="false"></textarea>
+
+                    <div class="row-actions">
+                        <button class="btn btn-submit" @onclick="Submit">✅ 제출</button>
+                        <button class="btn btn-reset"  @onclick="Reset">🔄 다시풀기</button>
+                        <button class="btn btn-answer" @onclick="ToggleAnswer">
+                            @(showAnswer ? "👁 정답 닫기" : "👁 정답보기")
+                        </button>
+                    </div>
+
+                    @if (result is not null)
+                    {
+                        <div class="result @result">
+                            @if (result == "correct")
+                            {
+                                <span>🎉 정답입니다! 잔디에 기록되었습니다.</span>
+                            }
+                            else
+                            {
+                                <span>❌ 다시 시도해보세요. 핵심 로직이 빠졌거나 달라요.</span>
+                            }
+                        </div>
+                    }
+
+                    @if (showAnswer)
+                    {
+                        <div class="answer-box">
+                            <div class="answer-hdr">✨ 모범 답안</div>
+                            <pre class="answer-code">@selected.SolutionCode</pre>
+                        </div>
+                    }
+                </div>
+            }
+        </section>
+
+        <!-- 오른쪽: AI 질문 -->
+        <aside class="ai-panel">
+            <div class="ai-hdr">🤖 AI 질문</div>
+            <div class="ai-ctx">
+                @(selected is null ? "알고리즘을 선택하면 관련 질문을 할 수 있어요"
+                                   : $"현재: {selected.Title}")
+            </div>
+            <div class="chat-log">
+                @if (chatHistory.Count == 0)
+                {
+                    <div class="chat-empty">Claude에게 자유롭게 질문하세요!</div>
+                }
+                @foreach (var msg in chatHistory)
+                {
+                    <div class="msg @msg.Role">
+                        <div class="bubble">@msg.Content</div>
+                    </div>
+                }
+                @if (isThinking)
+                {
+                    <div class="msg assistant">
+                        <div class="bubble thinking">생각 중…</div>
+                    </div>
+                }
+            </div>
+            <div class="chat-input-row">
+                <textarea class="ta ta-chat"
+                          @bind="chatInput"
+                          @bind:event="oninput"
+                          @onkeydown="OnChatKey"
+                          placeholder="질문 입력 (Enter 전송 / Shift+Enter 줄바꿈)"
+                          rows="3"
+                          disabled="@isThinking"></textarea>
+                <button class="btn btn-send" @onclick="AskClaude"
+                        disabled="@(isThinking || string.IsNullOrWhiteSpace(chatInput))">
+                    전송
+                </button>
+            </div>
+        </aside>
+    </div>
+</div>
+
+@code {
+    // ── 상태 ──────────────────────────────────────────────
+    private AlgorithmDef? selected;
+    private HashSet<string> completedIds = [];
+    private int totalCount;
+
+    private string concept = "";
+    private string userCode = "";
+    private bool conceptDirty;
+    private bool conceptSaved;
+    private string? result;
+    private bool showAnswer;
+
+    private HashSet<int> openStages = [0];   // 첫 단계 기본 열림
+
+    private List<ChatMessage> chatHistory = [];
+    private string chatInput = "";
+    private bool isThinking;
+
+    // ── 잔디 ───────────────────────────────────────────────
+    private List<List<DateOnly?>> grassWeeks = [];
+    private List<(string Label, int Px)> monthLabels = [];
+    private Dictionary<DateOnly, DayRecord> recordsByDate = [];
+
+    // ── 초기화 ────────────────────────────────────────────
+    protected override async Task OnInitializedAsync()
+    {
+        totalCount = Curriculum.Stages.Sum(s => s.Algorithms.Count);
+        await Reload();
+        BuildGrass();
+    }
+
+    private async Task Reload()
+    {
+        var all = await Svc.GetAllAsync();
+        completedIds = all.Where(a => a.IsCompleted).Select(a => a.Id).ToHashSet();
+        recordsByDate = await Svc.GetRecordsByDateAsync();
+    }
+
+    // cell 13px + gap 2px = 15px/week
+    private const int CellW = 15;
+
+    private void BuildGrass()
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var start = today.AddDays(-364);
+        int toMon = ((int)start.DayOfWeek + 6) % 7;
+        start = start.AddDays(-toMon);
+
+        grassWeeks = [];
+        monthLabels = [];
+        int? lastMonth = null;
+        int wi = 0;
+
+        for (var cur = start; cur <= today; cur = cur.AddDays(7), wi++)
+        {
+            var week = new List<DateOnly?>();
+            for (int d = 0; d < 7; d++)
+            {
+                var day = cur.AddDays(d);
+                week.Add(day <= today ? day : (DateOnly?)null);
+            }
+
+            var first = week.FirstOrDefault(d => d.HasValue);
+            if (first.HasValue && first.Value.Month != lastMonth)
+            {
+                monthLabels.Add(($"{first.Value.Month}월", wi * CellW));
+                lastMonth = first.Value.Month;
+            }
+
+            grassWeeks.Add(week);
+        }
+    }
+
+    private string GrassColor(DateOnly d)
+    {
+        if (!recordsByDate.TryGetValue(d, out var r)) return "g0";
+        return r.CompletedAlgorithms.Count switch
+        {
+            0    => "g0",
+            1    => "g1",
+            <= 3 => "g2",
+            <= 5 => "g3",
+            _    => "g4"
+        };
+    }
+
+    private string GrassTooltip(DateOnly d)
+    {
+        if (!recordsByDate.TryGetValue(d, out var r) || r.CompletedAlgorithms.Count == 0)
+            return $"{d:yyyy-MM-dd}  기록 없음";
+        return $"{d:yyyy-MM-dd}  완료: {string.Join(", ", r.CompletedAlgorithms)}";
+    }
+
+    // ── 아코디언 ────────────────────────────────────────
+    private void ToggleStage(int idx)
+    {
+        if (!openStages.Remove(idx)) openStages.Add(idx);
+    }
+
+    // ── 알고리즘 선택 ──────────────────────────────────
+    private async Task Select(AlgorithmDef algo)
+    {
+        selected = algo;
+        result = null;
+        showAnswer = false;
+        conceptDirty = false;
+        conceptSaved = false;
+        chatHistory = [];
+
+        var prog = await Svc.GetAsync(algo.Id);
+        concept  = prog?.Concept  ?? "";
+        userCode = prog?.UserCode ?? "";
+    }
+
+    // ── 개념 저장 ─────────────────────────────────────
+    private async Task SaveConcept()
+    {
+        if (selected is null) return;
+        await Svc.SaveProgressAsync(selected.Id, concept, userCode);
+        conceptDirty = false;
+        conceptSaved = true;
+        _ = Task.Delay(1800).ContinueWith(_ =>
+            InvokeAsync(() => { conceptSaved = false; StateHasChanged(); }));
+    }
+
+    // ── 코드 제출 ─────────────────────────────────────
+    private async Task Submit()
+    {
+        if (selected is null || string.IsNullOrWhiteSpace(userCode)) return;
+        bool ok = CheckCode(selected.Id, userCode);
+        result = ok ? "correct" : "incorrect";
+
+        if (ok && !completedIds.Contains(selected.Id))
+        {
+            await Svc.MarkCompletedAsync(selected.Id, userCode);
+            await Reload();
+            BuildGrass();
+        }
+        else if (ok)
+        {
+            await Svc.SaveProgressAsync(selected.Id, concept, userCode);
+        }
+    }
+
+    private void Reset() { userCode = ""; result = null; showAnswer = false; }
+    private void ToggleAnswer() => showAnswer = !showAnswer;
+
+    // ── 채점 ──────────────────────────────────────────
+    private static bool CheckCode(string id, string code)
+    {
+        if (!GradeKeywords.TryGetValue(id, out var kws)) return true;
+        var norm = System.Text.RegularExpressions.Regex.Replace(code.ToLower(), @"\s+", "");
+        return kws.All(kw => norm.Contains(kw.ToLower().Replace(" ", "")));
+    }
+
+    private static readonly Dictionary<string, string[]> GradeKeywords = new()
+    {
+        ["bubble-sort"]           = ["arr[j]>arr[j+1]", "arr[j+1]"],
+        ["selection-sort"]        = ["minidx", "arr[minidx]"],
+        ["insertion-sort"]        = ["key=arr[i]", "while(j>=0"],
+        ["merge-sort"]            = ["mergesort(", "merge("],
+        ["quick-sort"]            = ["partition(", "pivot"],
+        ["heap-sort"]             = ["heapify(", "largest"],
+        ["linear-search"]         = ["arr[i]==target"],
+        ["binary-search"]         = ["left+(right-left)/2", "arr[mid]"],
+        ["stack-queue"]           = ["stack<", "queue<"],
+        ["linked-list"]           = [".next", "head"],
+        ["tree"]                  = ["treenode", "node.left"],
+        ["hash-table"]            = ["dictionary<", "containskey"],
+        ["heap"]                  = ["(i-1)/2", "2*i+1"],
+        ["dfs"]                   = ["visited[node]", "dfs("],
+        ["bfs"]                   = ["queue.enqueue(", "queue.dequeue("],
+        ["dijkstra"]              = ["dist[", "priorityqueue<"],
+        ["fibonacci"]             = ["dp[i]=dp[i-1]+dp[i-2]"],
+        ["knapsack"]              = ["dp[i,w]", "weights[i-1]"],
+        ["lcs"]                   = ["dp[i,j]", "a[i-1]==b[j-1]"],
+        ["lis"]                   = ["dp[i]=", "arr[j]<arr[i]"],
+        ["coin-change"]           = ["amount-=", "coin"],
+        ["activity-selection"]    = ["end[", "start["],
+        ["binary-search-applied"] = ["left<right", "arr[mid]<target"],
+        ["merge-sort-applied"]    = ["countinversions(", "left.length-i"],
+        ["kmp"]                   = ["lps[", "pattern[j]"],
+        ["trie"]                  = ["children[", "isend"],
+    };
+
+    // ── AI 채팅 ───────────────────────────────────────
+    private async Task OnChatKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.ShiftKey)
+            await AskClaude();
+    }
+
+    private async Task AskClaude()
+    {
+        var q = chatInput.Trim();
+        if (string.IsNullOrEmpty(q) || isThinking) return;
+
+        chatInput = "";
+        chatHistory.Add(new ChatMessage("user", q));
+        isThinking = true;
+        StateHasChanged();
+
+        try
+        {
+            var ctx = selected?.Title ?? "알고리즘 일반";
+            var ans = await Claude.AskAsync(q, ctx, chatHistory.SkipLast(1).ToList());
+            chatHistory.Add(new ChatMessage("assistant", ans));
+        }
+        catch (Exception ex)
+        {
+            chatHistory.Add(new ChatMessage("assistant", $"오류: {ex.Message}"));
+        }
+        finally
+        {
+            isThinking = false;
+            StateHasChanged();
+        }
+    }
+}

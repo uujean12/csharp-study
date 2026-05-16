@@ -1,0 +1,104 @@
+@using AlgorithmDashboard.Models
+
+<div class="strip-outer">
+    <div class="month-row" style="padding-left:@(monthRowPad)px">
+        @foreach (var (label, offset) in monthLabels)
+        {
+            <span class="mlabel" style="left:@(offset)px">@label</span>
+        }
+    </div>
+    <div class="strip-body">
+        <div class="day-col">
+            <span></span><span>월</span><span></span>
+            <span>수</span><span></span><span>금</span><span></span>
+        </div>
+        <div class="weeks-wrap">
+            @foreach (var week in weeks)
+            {
+                <div class="week">
+                    @foreach (var day in week)
+                    {
+                        @if (day is null)
+                        {
+                            <div class="cell void"></div>
+                        }
+                        else
+                        {
+                            <div class="cell @CellClass(day.Value)"
+                                 title="@Tooltip(day.Value)"></div>
+                        }
+                    }
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public Dictionary<DateOnly, DayRecord> RecordsByDate { get; set; } = [];
+
+    private List<List<DateOnly?>> weeks = [];
+    private List<(string Label, int Offset)> monthLabels = [];
+    private int monthRowPad = 24;
+
+    protected override void OnParametersSet() => Build();
+
+    private void Build()
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        // 52주 전 월요일부터 시작
+        var start = today.AddDays(-364);
+        int toMon = ((int)start.DayOfWeek + 6) % 7;
+        start = start.AddDays(-toMon);
+
+        weeks = [];
+        monthLabels = [];
+        int? lastMonth = null;
+        int weekIdx = 0;
+        const int cellW = 15; // cell width + gap
+
+        var cur = start;
+        while (cur <= today)
+        {
+            var week = new List<DateOnly?>();
+            for (int d = 0; d < 7; d++)
+            {
+                var day = cur.AddDays(d);
+                week.Add(day <= today ? day : null);
+            }
+
+            // 이번 주 첫 날 기준 월 레이블
+            var firstValid = week.FirstOrDefault(d => d.HasValue);
+            if (firstValid.HasValue && firstValid.Value.Month != lastMonth)
+            {
+                monthLabels.Add(($"{firstValid.Value.Month}월", weekIdx * cellW));
+                lastMonth = firstValid.Value.Month;
+            }
+
+            weeks.Add(week);
+            cur = cur.AddDays(7);
+            weekIdx++;
+        }
+    }
+
+    private string CellClass(DateOnly d)
+    {
+        if (!RecordsByDate.TryGetValue(d, out var r)) return "c0";
+        return r.CompletedAlgorithms.Count switch
+        {
+            0   => "c0",
+            1   => "c1",
+            <= 3 => "c2",
+            <= 5 => "c3",
+            _   => "c4"
+        };
+    }
+
+    private string Tooltip(DateOnly d)
+    {
+        if (!RecordsByDate.TryGetValue(d, out var r) || r.CompletedAlgorithms.Count == 0)
+            return $"{d:yyyy-MM-dd}  공부 기록 없음";
+        return $"{d:yyyy-MM-dd}  완료: {string.Join(", ", r.CompletedAlgorithms)}";
+    }
+}
