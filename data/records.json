@@ -1,24 +1,9 @@
 {
-  "records": [
+  "dates": [
     {
-      "date": "2026-05-16",
-      "studyMinutes": 30,
-      "notes": "\uAC00\uB098 \uD559\uC2B5",
-      "algorithms": [
-        {
-          "id": "\uAC00\uB098",
-          "title": "\uAC00\uB098",
-          "category": "search",
-          "tags": [
-            "search"
-          ],
-          "description": "",
-          "complexity": {
-            "time": "-",
-            "space": "-"
-          },
-          "sourceFile": ""
-        }
+      "date": "2026-05-18",
+      "completedAlgorithms": [
+        "bubble-sort"
       ]
     }
   ]

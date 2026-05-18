@@ -220,11 +220,12 @@
     color: var(--tx);
 }
 
-.ta-code {
-    background: #010409;
-    color: #e6edf3;
-    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-    tab-size: 4;
+.monaco-container {
+    height: 340px;
+    border: 1px solid var(--bd);
+    border-radius: 6px;
+    overflow: hidden;
+    margin-bottom: 10px;
 }
 
 /* 버튼 공통 */

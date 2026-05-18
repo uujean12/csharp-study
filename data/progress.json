@@ -1,1 +1,11 @@
-{ "items": [] }
+{
+  "items": [
+    {
+      "id": "bubble-sort",
+      "concept": "",
+      "userCode": "static void BubbleSort(int[] arr)\n{\n    int n = arr.Length;\n    for (int i = 0; i \u003C n - 1; i\u002B\u002B)\n    {\n        for (int j = 0; j \u003C n - 1 - i; j\u002B\u002B)\n        {\n            if (arr[j] \u003E arr[j \u002B 1])\n                (arr[j], arr[j \u002B 1]) = (arr[j \u002B 1], arr[j]);\n        }\n    }\n}",
+      "isCompleted": true,
+      "completedAt": "2026-05-18"
+    }
+  ]
+}

@@ -2,6 +2,8 @@
 @rendermode InteractiveServer
 @inject ProgressService Svc
 @inject ClaudeService Claude
+@inject IJSRuntime JS
+@implements IAsyncDisposable
 
 <div class="page">
 
@@ -112,12 +114,7 @@
                 <!-- 코드 작성 -->
                 <div class="card">
                     <div class="card-title">💻 C# 코드 작성</div>
-                    <textarea class="ta ta-code"
-                              value="@userCode"
-                              @oninput="e => { userCode = e.Value?.ToString() ?? string.Empty; result = null; }"
-                              placeholder="여기에 C# 코드를 작성하세요..."
-                              rows="13"
-                              spellcheck="false"></textarea>
+                    <div id="monaco-container" class="monaco-container"></div>
 
                     <div class="row-actions">
                         <button class="btn btn-submit" @onclick="Submit">✅ 제출</button>
@@ -207,16 +204,67 @@
     private string? result;
     private bool showAnswer;
 
-    private HashSet<int> openStages = [0];   // 첫 단계 기본 열림
+    private HashSet<int> openStages = [0];
 
     private List<ChatMessage> chatHistory = [];
     private string chatInput = "";
     private bool isThinking;
 
+    // ── Monaco 인터롭 ─────────────────────────────────────
+    private DotNetObjectReference<Home>? _dotNetRef;
+    private string? _editorAlgoId;  // 현재 에디터에 로드된 알고리즘 ID
+
     // ── 잔디 ───────────────────────────────────────────────
     private List<List<DateOnly?>> grassWeeks = [];
     private List<(string Label, int Px)> monthLabels = [];
     private Dictionary<DateOnly, DayRecord> recordsByDate = [];
+
+    // ── Monaco 생명주기 ───────────────────────────────────
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+            _dotNetRef = DotNetObjectReference.Create(this);
+
+        if (selected is null)
+        {
+            _editorAlgoId = null;
+            return;
+        }
+
+        if (_editorAlgoId is null)
+        {
+            // 에디터 div가 처음 DOM에 나타남 → Monaco 초기화
+            await JS.InvokeVoidAsync("monacoInterop.init", "monaco-container", userCode, _dotNetRef);
+            _editorAlgoId = selected.Id;
+        }
+        else if (_editorAlgoId != selected.Id)
+        {
+            // 알고리즘 전환 → 에디터 내용만 교체
+            await JS.InvokeVoidAsync("monacoInterop.setValue", userCode);
+            _editorAlgoId = selected.Id;
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnCodeChanged(string value)
+    {
+        userCode = value;
+        if (result is not null)
+        {
+            result = null;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_dotNetRef is not null)
+        {
+            await JS.InvokeVoidAsync("monacoInterop.dispose");
+            _dotNetRef.Dispose();
+            _dotNetRef = null;
+        }
+    }
 
     // ── 초기화 ────────────────────────────────────────────
     protected override async Task OnInitializedAsync()
@@ -339,7 +387,13 @@
         }
     }
 
-    private void Reset() { userCode = ""; result = null; showAnswer = false; }
+    private async Task Reset()
+    {
+        userCode = "";
+        result = null;
+        showAnswer = false;
+        await JS.InvokeVoidAsync("monacoInterop.setValue", "");
+    }
     private void ToggleAnswer() => showAnswer = !showAnswer;
 
     // ── 채점 ──────────────────────────────────────────
