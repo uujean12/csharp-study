@@ -1,5 +1,3 @@
 <Solution>
   <Project Path="AlgorithmDashboard/AlgorithmDashboard.csproj" />
-  <Project Path="AlgorithmStudy/AlgorithmStudy.csproj" />
-  <Project Path="CsharpAlgorithm/CsharpAlgorithm.csproj" />
 </Solution>
